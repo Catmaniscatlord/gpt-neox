@@ -67,9 +67,8 @@ class GRUOut(nn.Module):
         )
 
     def forward(self, hidden_states, gru_states):
-        # xh = torch.cat((hidden_states, gru_states), dim=-1)
-        # return self.W(xh)[0]
-        return gru_states
+        xh = torch.cat((hidden_states, gru_states), dim=-1)
+        return hidden_states * gru_states
 
 
 class GRULayerPipe(GRULayer):
@@ -83,7 +82,7 @@ class GRULayerPipe(GRULayer):
         ), "GRULayerPipe expects 3 arguments - gru_states, hidden_states, and attention_mask"
         gru_states, hidden_states, attention_mask = args
         # we are returning just [gru_states, hidden_states, mask]
-        return hidden_states, super().forward(hidden_states, gru_states), attention_mask
+        return super().forward(hidden_states, gru_states), hidden_states, attention_mask
 
 
 class GRUOutPipe(GRUOut):
