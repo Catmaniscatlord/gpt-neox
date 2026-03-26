@@ -1,0 +1,4 @@
+{
+  "use_gru": true,
+  "gru_width": 256,
+}

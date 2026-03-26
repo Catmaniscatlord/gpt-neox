@@ -155,3 +155,5 @@ src/
 # test data files
 tests/data/*.bin
 tests/data/*.idx
+hostfiles
+slurm-jobs

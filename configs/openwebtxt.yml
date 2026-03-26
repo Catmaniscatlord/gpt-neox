@@ -1,0 +1,9 @@
+{
+  "data_path": "data/enwik8/enwik8_text_document",
+  "vocab_file": "data/gpt2-vocab.json",
+  "merge_file": "data/gpt2-merges.txt",
+  "save": "checkpoints",
+  "load": "checkpoints",
+  "log_dir": "logs",
+}
+

@@ -113,13 +113,11 @@ class GRULayerWrapperPipe(nn.Module):
             # we are returning just [hidden_states, mask]
             return (
                 gru_states,
-                self.layer.forward(hidden_states, attention_mask),
+                self.layer.forward((hidden_states, attention_mask)),
                 attention_mask,
             )
         else:
             assert (
                 len(args) == 2
             ), "LayerWrapperPipe expects 2 arguments - hidden_states and attention_mask"
-            hidden_states, attention_mask = args
-            # we are returning just [hidden_states, mask]
-            return self.layer.forward(hidden_states, attention_mask), attention_mask
+            return self.layer.forward(args)
