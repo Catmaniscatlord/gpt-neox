@@ -21,9 +21,9 @@ except ImportError:
     from template import NeoXArgsTemplate
 
 try:
-    from typing import List, Literal, Union, Optional, Any
+    from typing import Any, List, Literal, Optional, Union
 except ImportError:
-    from typing_extensions import List, Literal, Union, Optional
+    from typing_extensions import List, Literal, Optional, Union
 
 
 ATTENTION_TYPE_CHOICES = [
@@ -112,6 +112,19 @@ class NeoXArgsModel(NeoXArgsTemplate):
     hidden_size: int = None
     """
     Transformer hidden size.
+    """
+
+    use_gru: bool = False
+    """
+    Wrap layers with a GRU layer
+    """
+
+    gru_width: int = None
+    """
+    """
+
+    gru_use_bias: int = None
+    """
     """
 
     intermediate_size: int = None
@@ -204,9 +217,9 @@ class NeoXArgsModel(NeoXArgsTemplate):
     Scalenorm epsilon
     """
 
-    pos_emb: Literal[
-        "learned", "rotary", "sinusoidal", "rpe", "alibi", "none"
-    ] = "learned"
+    pos_emb: Literal["learned", "rotary", "sinusoidal", "rpe", "alibi", "none"] = (
+        "learned"
+    )
     """
     Type of positional embedding to use - choose from 'learned', 'rotary', 'sinusoidal', 'rpe', 'none'
     """

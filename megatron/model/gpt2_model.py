@@ -18,32 +18,29 @@
 """GPT-2 model."""
 
 import math
+from collections import defaultdict
+from functools import partial
+from typing import List, Union
+
 import torch
 import torch.nn as nn
-from collections import defaultdict
-
-from functools import partial
-from megatron.model.utils import Lambda, SequentialWrapper, recursive_setattr
-from megatron.model.norms import get_norm
-from megatron.model.init_functions import get_init_methods
+# Pipeline parallelism
+from deepspeed.pipe import LayerSpec, PipelineModule, TiedLayerSpec
 
 from megatron import mpu
-from megatron.mpu import ParallelRelativePositionBias
-from megatron.model.transformer import (
-    ParallelTransformerLayerPipe,
-    NormPipe,
-    ParallelLinearPipe,
-    parallel_lm_logits,
-    ParallelLinear,
-)
 from megatron.model.gmlp import GMLPBlock
-from megatron.model.rwkv.v6 import RWKVResidualLayerPipe
+from megatron.model.gru import GRULayer, GRULayerPipe, GRULayerWrapperPipe
+from megatron.model.init_functions import get_init_methods
 from megatron.model.mamba import ParallelMambaResidualLayerPipe
+from megatron.model.norms import get_norm
+from megatron.model.rwkv.v6 import RWKVResidualLayerPipe
+from megatron.model.transformer import (NormPipe, ParallelLinear,
+                                        ParallelLinearPipe,
+                                        ParallelTransformerLayerPipe,
+                                        parallel_lm_logits)
+from megatron.model.utils import Lambda, SequentialWrapper, recursive_setattr
 from megatron.model.word_embeddings import EmbeddingPipe, SoftEmbedding
-
-# Pipeline parallelism
-from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec
-from typing import Union, List
+from megatron.mpu import ParallelRelativePositionBias
 
 
 def gpt2_attention_mask_func(attention_scores, ltor_mask):
@@ -93,6 +90,26 @@ def _post_transformer_block(args):
     return fn(args)
 
 
+def _pre_transformer_block_gru(args):
+    # data format change for hidden_states to avoid explicit tranposes : [b s h] --> [s b h]
+    assert len(args) == 2, "Incorrect number of arguments to _pre_transformer_block_gru"
+    fn = lambda _args: (_args[0].transpose(0, 1).contiguous(), *_args[1:])
+    return fn(args)
+
+
+def _post_transformer_block_gru(args):
+    # from (gru_states, hidden_states, attention_mask)
+    # to (gru_states.T, hidden_states.T)
+    assert (
+        len(args) == 3
+    ), "Incorrect number of arguments to _post_transformer_block_gru"
+    fn = lambda _args: (
+        _args[0].transpose(0, 1).contiguous(),
+        _args[1].transpose(0, 1).contiguous(),
+    )
+    return fn(args)
+
+
 class GPT2ModelPipe(PipelineModule, torch.nn.Module):
     """GPT2Model adapted for pipeline parallelism.
 
@@ -132,14 +149,17 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
             layers=self.specs,
             loss_fn=partial(cross_entropy, _fp16=self.neox_args.fp16_lm_cross_entropy),
             topology=topology,
-            activation_checkpoint_interval=self.neox_args.checkpoint_num_layers
-            if self.neox_args.checkpoint_activations
-            else 0,
+            activation_checkpoint_interval=(
+                self.neox_args.checkpoint_num_layers
+                if self.neox_args.checkpoint_activations
+                else 0
+            ),
             partition_method=neox_args.pipe_partition_method,
             checkpointable_layers=[
                 "GMLPBlock",
                 "ParallelTransformerLayerPipe",
                 "ParallelMambaResidualLayerPipe",
+                # TODO(David):  Insert GRU Here
             ],
         )
 
@@ -177,6 +197,7 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
                 "ParallelTransformerLayerPipe",
                 "ParallelMambaResidualLayerPipe",
                 "RWKVResidualLayerPipe",
+                # TODO(David):  Insert GRU Here
             ],
         )
 
@@ -222,6 +243,7 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
         #
         # outputs are now (hidden_states,  attention_mask)
 
+        # TODO(David): Insert GRU Here
         self.specs.append(_pre_transformer_block)
 
         # T5 RPE positional embedding
@@ -245,27 +267,30 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
             if layer_type in ["gmlp", "amlp"]:
                 self.specs.append(
                     LayerSpec(
-                        GMLPBlock,
+                        GRULayerWrapperPipe,
+                        neox_args=self.neox_args,
+                        block_cls=GMLPBlock,
                         init_method=self.init_method,
                         layer_number=i,
                         output_layer_init_method=self.output_layer_init_method,
-                        neox_args=self.neox_args,
                         mask_fn=gpt2_attention_mask_func,
                     )
                 )
             elif layer_type == "rwkv":
                 self.specs.append(
                     LayerSpec(
-                        RWKVResidualLayerPipe,
+                        GRULayerWrapperPipe,
                         neox_args=self.neox_args,
+                        block_cls=RWKVResidualLayerPipe,
                         layer_number=i,
                     )
                 )
             elif layer_type in ["mamba"]:
                 self.specs.append(
                     LayerSpec(
-                        ParallelMambaResidualLayerPipe,
+                        GRULayerWrapperPipe,
                         neox_args=self.neox_args,
+                        block_cls=ParallelMambaResidualLayerPipe,
                         init_method=self.init_method,
                         output_layer_init_method=self.output_layer_init_method,
                         layer_number=i,
@@ -274,8 +299,9 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
             else:
                 self.specs.append(
                     LayerSpec(
-                        ParallelTransformerLayerPipe,
+                        GRULayerWrapperPipe,
                         neox_args=self.neox_args,
+                        block_cls=ParallelTransformerLayerPipe,
                         attention_mask_func=gpt2_attention_mask_func,
                         init_method=self.init_method,
                         output_layer_init_method=self.output_layer_init_method,
@@ -283,6 +309,15 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
                         rpe=rpe_emb if self.neox_args.pos_emb == "rpe" else None,
                         rotary=self.neox_args.pos_emb == "rotary",
                         use_cache=self.use_cache,
+                    )
+                )
+
+            if self.neox_args.use_gru:
+                self.specs.append(
+                    TiedLayerSpec(
+                        "gru",
+                        GRULayerPipe,
+                        neox_args=self.neox_args,
                     )
                 )
 
