@@ -39,7 +39,7 @@ class GRULayer(nn.Module):
         )
 
     def forward(self, hidden_states, gru_states):
-        xh = torch.cat((hidden_states, gru_states), dim=1)
+        xh = torch.cat((hidden_states, gru_states), dim=-1)
         z, r, h_hat = self.W(xh).chunk(3, dim=-1)
 
         z = torch.sigmoid(z)
@@ -67,7 +67,7 @@ class GRUOut(nn.Module):
         )
 
     def forward(self, hidden_states, gru_states):
-        xh = torch.cat((hidden_states, gru_states), dim=1)
+        xh = torch.cat((hidden_states, gru_states), dim=-1)
         return self.W(gru_states)
 
 
