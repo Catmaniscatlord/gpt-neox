@@ -68,7 +68,7 @@ class GRUOut(nn.Module):
 
     def forward(self, hidden_states, gru_states):
         xh = torch.cat((hidden_states, gru_states), dim=-1)
-        return self.W(xh)
+        return self.W(xh)[0]
 
 
 class GRULayerPipe(GRULayer):
