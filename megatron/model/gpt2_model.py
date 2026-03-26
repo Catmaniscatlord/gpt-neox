@@ -29,7 +29,8 @@ from deepspeed.pipe import LayerSpec, PipelineModule, TiedLayerSpec
 
 from megatron import mpu
 from megatron.model.gmlp import GMLPBlock
-from megatron.model.gru import GRULayer, GRULayerPipe, GRULayerWrapperPipe
+from megatron.model.gru import (GRUInit, GRULayerPipe, GRULayerWrapperPipe,
+                                GRUOutPipe)
 from megatron.model.init_functions import get_init_methods
 from megatron.model.mamba import ParallelMambaResidualLayerPipe
 from megatron.model.norms import get_norm
@@ -87,26 +88,6 @@ def _post_transformer_block(args):
     # to (hidden_states.T)
     assert len(args) == 2, "Incorrect number of arguments to _post_transformer_block"
     fn = lambda _args: (_args[0].transpose(0, 1).contiguous())
-    return fn(args)
-
-
-def _pre_transformer_block_gru(args):
-    # data format change for hidden_states to avoid explicit tranposes : [b s h] --> [s b h]
-    assert len(args) == 2, "Incorrect number of arguments to _pre_transformer_block_gru"
-    fn = lambda _args: (_args[0].transpose(0, 1).contiguous(), *_args[1:])
-    return fn(args)
-
-
-def _post_transformer_block_gru(args):
-    # from (gru_states, hidden_states, attention_mask)
-    # to (gru_states.T, hidden_states.T)
-    assert (
-        len(args) == 3
-    ), "Incorrect number of arguments to _post_transformer_block_gru"
-    fn = lambda _args: (
-        _args[0].transpose(0, 1).contiguous(),
-        _args[1].transpose(0, 1).contiguous(),
-    )
     return fn(args)
 
 
@@ -243,8 +224,15 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
         #
         # outputs are now (hidden_states,  attention_mask)
 
-        # TODO(David): Insert GRU Here
         self.specs.append(_pre_transformer_block)
+
+        if self.neox_args.use_gru:
+            self.specs.append(
+                LayerSpec(
+                    GRUInit,
+                    neox_args=self.neox_args,
+                )
+            )
 
         # T5 RPE positional embedding
         if self.neox_args.pos_emb == "rpe":
@@ -318,8 +306,17 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
                         "gru",
                         GRULayerPipe,
                         neox_args=self.neox_args,
+                        tied_weight_attr="gru_weight",
                     )
                 )
+
+        if self.neox_args.use_gru:
+            self.specs.append(
+                LayerSpec(
+                    GRUOutPipe,
+                    neox_args=self.neox_args,
+                )
+            )
 
         # used to drop attention mask + reshape hidden states
         self.specs.append(_post_transformer_block)

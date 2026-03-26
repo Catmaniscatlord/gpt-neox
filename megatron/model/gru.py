@@ -19,6 +19,7 @@ class GRUInit(nn.Module):
             device=hidden_states.device,
             dtype=hidden_states.dtype,
         )
+        return
 
 
 class GRULayer(nn.Module):
@@ -49,6 +50,27 @@ class GRULayer(nn.Module):
         return gru_states
 
 
+class GRUOut(nn.Module):
+    """Standalone GRU module — exists only to be weight-tied."""
+
+    def __init__(self, neox_args):
+        super().__init__()
+        self.neox_args = neox_args
+
+        ColumnParallelLinear, RowParallelLinear = get_parallel_linear(neox_args)
+
+        self.W = RowParallelLinear(
+            neox_args=neox_args,
+            input_size=neox_args.hidden_size + neox_args.gru_width,
+            output_size=neox_args.hidden_size,
+            bias=neox_args.gru_use_bias,
+        )
+
+    def forward(self, hidden_states, gru_states):
+        xh = torch.cat((hidden_states, gru_states), dim=1)
+        return self.W(gru_states)
+
+
 class GRULayerPipe(GRULayer):
     def forward(self, args):
         assert (
@@ -57,6 +79,16 @@ class GRULayerPipe(GRULayer):
         gru_states, hidden_states, attention_mask = args
         # we are returning just [gru_states, hidden_states, mask]
         return super().forward(hidden_states, gru_states), hidden_states, attention_mask
+
+
+class GRUOutPipe(GRUOut):
+    def forward(self, args):
+        assert (
+            len(args) == 3
+        ), "GRUOutPipe expects 3 arguments - gru_states, hidden_states, and attention_mask"
+        gru_states, hidden_states, attention_mask = args
+        # we are returning just [gru_states, hidden_states, mask]
+        return super().forward(hidden_states, gru_states), attention_mask
 
 
 class GRULayerWrapperPipe(nn.Module):

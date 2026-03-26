@@ -123,7 +123,7 @@ class NeoXArgsModel(NeoXArgsTemplate):
     """
     """
 
-    gru_use_bias: int = None
+    gru_use_bias: bool = None
     """
     """
 
