@@ -19,7 +19,7 @@ class GRUInit(nn.Module):
             device=hidden_states.device,
             dtype=hidden_states.dtype,
         )
-        return
+        return gru_states, hidden_states, attention_mask
 
 
 class GRULayer(nn.Module):
@@ -112,14 +112,12 @@ class GRULayerWrapperPipe(nn.Module):
             gru_states, hidden_states, attention_mask = args
             # we are returning just [hidden_states, mask]
             return (
-                self.layer.forward(hidden_states, attention_mask),
+                gru_states,
+                self.layer.forward((hidden_states, attention_mask)),
                 attention_mask,
-                gru_state,
             )
         else:
             assert (
                 len(args) == 2
             ), "LayerWrapperPipe expects 2 arguments - hidden_states and attention_mask"
-            hidden_states, attention_mask = args
-            # we are returning just [hidden_states, mask]
-            return self.layer.forward(hidden_states, attention_mask), attention_mask
+            return self.layer.forward(args)
