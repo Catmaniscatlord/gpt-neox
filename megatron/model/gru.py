@@ -72,6 +72,10 @@ class GRUOut(nn.Module):
 
 
 class GRULayerPipe(GRULayer):
+    @property
+    def gru_weight(self):
+        return self.W.weight
+
     def forward(self, args):
         assert (
             len(args) == 3
