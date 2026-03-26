@@ -113,7 +113,7 @@ class GRULayerWrapperPipe(nn.Module):
             # we are returning just [hidden_states, mask]
             return (
                 gru_states,
-                self.layer.forward((hidden_states, attention_mask)),
+                self.layer.forward((hidden_states, attention_mask))[0],
                 attention_mask,
             )
         else:
