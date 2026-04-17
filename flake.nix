@@ -17,34 +17,42 @@
           pname = "deepspeed";
           version = "0.18.8";
 
+          # format = "wheel";
+          pyproject = true;
+
           src = pkgs.python3.pkgs.fetchPypi {
             inherit pname version;
             hash = "sha256-5OBRoUSwx0JwxG5JcBOfmoamH/JpWcXkYwAMSpO5kwQ=";
           };
-
-          # pyproject = true;
 
           build-system = with pkgs.python3.pkgs; [
             setuptools
             wheel
           ];
 
-          nativeBuildInputs = with pkgs; [
-            cmake
-            ninja
-          ];
-
           propagatedBuildInputs = with pkgs.python3.pkgs; [
-            torch
+            einops
+            hjson
+            msgpack
+            ninja
             numpy
-            psutil
             packaging
+            psutil
             py-cpuinfo
+            pydantic
+            torch
+            tqdm
           ];
 
-          DEEPSPEED_BUILD_OPS = "0";
+          # force CPU-only build
+          preBuild = ''
+            export DS_BUILD_OPS=0
+            export DEEPSPEED_BUILD_OPS=0
+          '';
 
           doCheck = false;
+
+          enableParallelBuilding = true;
         };
 
       in
@@ -54,9 +62,18 @@
             (pkgs.python3.withPackages (
               python-pkgs: with python-pkgs; [
                 # select Python packages here
-                matplotlib
-                torch
                 deepspeed
+                ftfy
+                jinja2
+                mpi4py
+                numpy
+                pybind11
+                regex
+                sentencepiece
+                six
+                tiktoken
+                tokenizers
+                transformers
               ]
             ))
           ];
