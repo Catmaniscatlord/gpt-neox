@@ -16,15 +16,13 @@
 # limitations under the License.
 
 import torch
-from megatron.model.activations import get_activation
-
-from megatron.mpu.layers import _initialize_affine_weight_gpu
-from megatron.mpu.initialize import get_model_parallel_world_size
-from megatron.mpu.utils import divide
-
-from megatron.neox_arguments.arguments import NeoXArgs
-
 from megablocks import grouped_gemm_util as gg
+
+from megatron.model.activations import get_activation
+from megatron.mpu.initialize import get_model_parallel_world_size
+from megatron.mpu.layers import _initialize_affine_weight_gpu
+from megatron.mpu.utils import divide
+from megatron.neox_arguments.arguments import NeoXArgs
 
 
 class ScaleGradient(torch.autograd.Function):
@@ -174,7 +172,7 @@ class ParallelGroupedMLP(torch.nn.Module):
         self.w1 = torch.nn.Parameter(
             torch.empty(
                 self.num_rows_per_rank,
-                self.hidden_size,
+                2 * self.hidden_size if neox_args.gpt_s_dual else self.hidden_size,
                 device=torch.cuda.current_device(),
                 dtype=neox_args.params_dtype,
             )

@@ -19,34 +19,28 @@
 
 import math
 from contextlib import nullcontext
-
-import torch
-import torch.nn.functional as F
-import torch.nn as nn
-from pkg_resources import packaging
 from importlib.metadata import version
 
-from .norms import get_norm
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from pkg_resources import packaging
+
 from megatron import mpu
-from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.activations import get_activation
-from megatron.model.utils import exists, get_fusion_type
-from megatron.model.positional_embeddings import (
-    RotaryEmbedding,
-    apply_rotary_pos_emb_torch,
-    apply_rotary_pos_emb,
-    AliBi,
-)
-from megatron.model.fused_rope import (
-    FusedRoPEFunc,
-    fused_apply_rotary_pos_emb_cached,
-)
 from megatron.model.fused_bias_dropout import (
-    get_bias_dropout_add,
-    bias_dropout_add_fused_train,
-    bias_dropout_add_fused_inference,
-)
-from megatron.model.utils import configure_sparse_attention
+    bias_dropout_add_fused_inference, bias_dropout_add_fused_train,
+    get_bias_dropout_add)
+from megatron.model.fused_rope import (FusedRoPEFunc,
+                                       fused_apply_rotary_pos_emb_cached)
+from megatron.model.fused_softmax import FusedScaleMaskSoftmax
+from megatron.model.positional_embeddings import (AliBi, RotaryEmbedding,
+                                                  apply_rotary_pos_emb,
+                                                  apply_rotary_pos_emb_torch)
+from megatron.model.utils import (configure_sparse_attention, exists,
+                                  get_fusion_type)
+
+from .norms import get_norm
 
 try:
     from flash_attn.ops.activations import swiglu
@@ -143,7 +137,11 @@ class ParallelMLP(nn.Module):
         )
         self.linear1 = ColumnParallelLinear(
             neox_args=neox_args,
-            input_size=neox_args.hidden_size,
+            input_size=(
+                2 * neox_args.hidden_size
+                if neox_args.gpt_s_dual
+                else neox_args.hidden_size
+            ),
             output_size=ffn_dim,
             gather_output=False,
             init_method=init_method,
@@ -432,12 +430,9 @@ class ParallelSelfAttention(nn.Module):
                 # consider adding OpenAI's more recent Flash-2 Triton kernel in future
                 # from https://github.com/openai/triton/blob/main/python/tutorials/06-fused-attention.py
                 from flash_attn.flash_attn_interface import (
-                    flash_attn_func,
-                    flash_attn_varlen_func,
-                )
-                from flash_attn.flash_attn_triton import (
-                    flash_attn_func as flash_attn_unpadded_unpacked_func_triton,
-                )
+                    flash_attn_func, flash_attn_varlen_func)
+                from flash_attn.flash_attn_triton import \
+                    flash_attn_func as flash_attn_unpadded_unpacked_func_triton
 
                 self.flash_triton_fn = flash_attn_unpadded_unpacked_func_triton
                 self.flash_qkv_fn = flash_attn_func
@@ -1019,6 +1014,9 @@ class ParallelTransformerLayer(nn.Module):
 
         if self.num_experts <= 1:
             if neox_args.te_layernorm_mlp:
+                assert (
+                    not neox_args.gpt_s_dual
+                ), "gpt_s_dual doesn't work with te_layernorm_mlp"
                 self.mlp = get_te_lnmlp()
             else:
                 self.mlp = get_mlp()
@@ -1100,7 +1098,12 @@ class ParallelTransformerLayer(nn.Module):
                         )
 
                 # mlp operator
-                mlp_output, mlp_bias = self.mlp(x2)
+                if self.neox_args.gpt_s_dual:
+                    mlp_output, mlp_bias = self.mlp(
+                        torch.cat((x2, attention_output), dim=-1)
+                    )
+                else:
+                    mlp_output, mlp_bias = self.mlp(x2)
                 if mlp_bias is not None:
                     with torch.enable_grad() if not self.eval else nullcontext():
                         output = bias_dropout_fn(

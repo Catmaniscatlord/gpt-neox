@@ -444,6 +444,19 @@ class NeoXArgsModel(NeoXArgsTemplate):
       x = x + attn(x) + mlp(x)
     """
 
+    gpt_s_dual: bool = False
+    """
+    Doesnt work with neox_args.te_layernorm_mlp
+    Only works if gpt_j_residual is true
+    If false we use GPT-J style:
+      x = ln(x)
+      x = x + attn(x) + mlp(x)
+    Otherwise, we do:
+      x = ln(x)
+      a = attn(x)
+      x = x + a + mlp(torch.cat((x,a), dim=-1))
+    """
+
     gpt_j_tied: bool = False
     """
     If false, we use
