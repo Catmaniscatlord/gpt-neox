@@ -1,5 +1,5 @@
 {
-  "pipe_parallel_size": 1,
+  "pipe_parallel_size": 0,
   "model_parallel_size": 1,
 
   "num_layers": 12,
@@ -9,7 +9,7 @@
   "max_position_embeddings": 2048,
   "norm": "layernorm",
   "pos_emb": "rotary",
-  "no_weight_tying": true,
+  "no_weight_tying": false,
   "gpt_j_residual": false,
   "output_layer_parallelism": "column",
 
@@ -41,7 +41,7 @@
     "contiguous_gradients": true
   },
 
-  "train_micro_batch_size_per_gpu": 4,
+  "train_micro_batch_size_per_gpu": 8,
   "data_impl": "mmap",
 
   "checkpoint_activations": true,
@@ -74,7 +74,5 @@
   "log_interval": 100,
   "steps_per_print": 10,
   "keep_last_n_checkpoints": 4,
-  "wall_clock_breakdown": true,
-
-  "hostfile": "/mock_path"
+  "wall_clock_breakdown": false,
 }

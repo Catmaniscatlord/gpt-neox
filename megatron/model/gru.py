@@ -44,7 +44,7 @@ class GRULayer(nn.Module):
 
         z = torch.sigmoid(z)
         r = torch.sigmoid(r)
-        h_hat = torch.tanh(h_hat)
+        h_hat = torch.tanh(h_hat * r)
         gru_states = (1 - z) * gru_states + z * h_hat
 
         return gru_states
@@ -92,7 +92,8 @@ class GRUOutPipe(GRUOut):
         ), "GRUOutPipe expects 3 arguments - gru_states, hidden_states, and attention_mask"
         gru_states, hidden_states, attention_mask = args
         # we are returning just [gru_states, hidden_states, mask]
-        return super().forward(hidden_states, gru_states), attention_mask
+        out = super().forward(hidden_states, gru_states)
+        return out, attention_mask
 
 
 class GRULayerWrapperPipe(nn.Module):

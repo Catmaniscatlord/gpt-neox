@@ -420,12 +420,19 @@ class GPT2ModelPipe(PipelineModule, torch.nn.Module):
         for n, spec in enumerate(self.specs):
             if isinstance(spec, TiedLayerSpec):
                 if spec.key in tied_layers:
-                    # receiver
-                    layers.append(
-                        Lambda(lambda x: spec.forward_fn(tied_layers[spec.key][0], x))
-                    )
+                    # receiver — capture loop variables by value to avoid closure bug
+                    if spec.forward_fn is not None:
+                        # "embed" key: has a custom forward_fn (e.g. _logits_helper)
+                        layers.append(
+                            Lambda(lambda x, _fn=spec.forward_fn, _mod=tied_layers[spec.key][0]: _fn(_mod, x))
+                        )
+                    else:
+                        # "gru" key: no forward_fn, just call the tied module directly
+                        layers.append(
+                            Lambda(lambda x, _mod=tied_layers[spec.key][0]: _mod(x))
+                        )
                 else:
-                    # owner
+                    # owner: build the module and register it as the canonical instance
                     module = spec.build(log=False)
                     layers.append(module)
                     tied_layers[spec.key].append(module)
